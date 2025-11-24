@@ -1,0 +1,15 @@
+{
+  "name": "figma-to-code",
+  "version": "1.0.0",
+  "description": "Figmaのセクションを順次取得し、1つのHTMLファイルに統合するツール",
+  "main": "fetch-figma.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^17.2.3"
+  }
+}
