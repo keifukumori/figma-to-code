@@ -5,8 +5,19 @@
 node_modules/
 npm-debug.log*
 
-# 出力ディレクトリ
+# 出力ディレクトリ（個別案件データ）
 output/
+
+# Figmaデータファイル（個別案件）
+figma-data*.json
+figma-capture*.png
+design-analysis-report*.json
+
+# 作業ファイル・メモ
+memo.txt
+*.backup
+debug/
+home.css
 
 # OS
 .DS_Store
