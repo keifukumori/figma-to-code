@@ -19,6 +19,9 @@ memo.txt
 debug/
 home.css
 
+# アーカイブ（使用していないファイル）
+archive-unused/
+
 # OS
 .DS_Store
 Thumbs.db
