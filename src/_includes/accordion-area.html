@@ -1,0 +1,111 @@
+<section class="accordion-area">
+  <!-- Row 1: 3カラム -->
+  <div class="accordion-area__row accordion-area__row--3col">
+    <div class="accordion-item">
+      <button class="accordion-item__header" type="button" aria-expanded="false">
+        <span class="accordion-item__title">保険事業を通じた健康寿命の延伸</span>
+        <span class="accordion-item__icon-wrap">
+          <img src="icons/plus.svg" alt="" class="accordion-item__icon accordion-item__icon--plus">
+          <img src="icons/minus.svg" alt="" class="accordion-item__icon accordion-item__icon--minus">
+        </span>
+      </button>
+      <div class="accordion-item__content">
+        <ul class="accordion-item__list">
+          <li><a href="#" class="accordion-item__link">サンプルリンク1</a></li>
+          <li><a href="#" class="accordion-item__link">サンプルリンク2</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="accordion-item">
+      <button class="accordion-item__header" type="button" aria-expanded="false">
+        <span class="accordion-item__title">保険事業を通じた安心の提供</span>
+        <span class="accordion-item__icon-wrap">
+          <img src="icons/plus.svg" alt="" class="accordion-item__icon accordion-item__icon--plus">
+          <img src="icons/minus.svg" alt="" class="accordion-item__icon accordion-item__icon--minus">
+        </span>
+      </button>
+      <div class="accordion-item__content">
+        <ul class="accordion-item__list">
+          <li><a href="#" class="accordion-item__link">サンプルリンク1</a></li>
+          <li><a href="#" class="accordion-item__link">サンプルリンク2</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="accordion-item">
+      <button class="accordion-item__header" type="button" aria-expanded="false">
+        <span class="accordion-item__title">持続的・安定的な成長の実現</span>
+        <span class="accordion-item__icon-wrap">
+          <img src="icons/plus.svg" alt="" class="accordion-item__icon accordion-item__icon--plus">
+          <img src="icons/minus.svg" alt="" class="accordion-item__icon accordion-item__icon--minus">
+        </span>
+      </button>
+      <div class="accordion-item__content">
+        <ul class="accordion-item__list">
+          <li><a href="#" class="accordion-item__link">サンプルリンク1</a></li>
+          <li><a href="#" class="accordion-item__link">サンプルリンク2</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 2: 2カラム -->
+  <div class="accordion-area__row accordion-area__row--2col">
+    <div class="accordion-item">
+      <button class="accordion-item__header" type="button" aria-expanded="false">
+        <span class="accordion-item__title">ステークホルダーとの信頼関係の構築</span>
+        <span class="accordion-item__icon-wrap">
+          <img src="icons/plus.svg" alt="" class="accordion-item__icon accordion-item__icon--plus">
+          <img src="icons/minus.svg" alt="" class="accordion-item__icon accordion-item__icon--minus">
+        </span>
+      </button>
+      <div class="accordion-item__content">
+        <ul class="accordion-item__list">
+          <li><a href="#" class="accordion-item__link">サンプルリンク1</a></li>
+          <li><a href="#" class="accordion-item__link">サンプルリンク2</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 開いた状態 -->
+    <div class="accordion-item accordion-item--open">
+      <button class="accordion-item__header accordion-item__header--open" type="button" aria-expanded="true">
+        <span class="accordion-item__title">サステナビリティを支える経営体制</span>
+        <span class="accordion-item__icon-wrap">
+          <img src="icons/plus.svg" alt="" class="accordion-item__icon accordion-item__icon--plus">
+          <img src="icons/minus.svg" alt="" class="accordion-item__icon accordion-item__icon--minus">
+        </span>
+      </button>
+      <div class="accordion-item__content">
+        <ul class="accordion-item__list">
+          <li><a href="#" class="accordion-item__link">コーポレートガバナンス</a></li>
+          <li><a href="#" class="accordion-item__link">グループベースの経営体制強化</a></li>
+          <li><a href="#" class="accordion-item__link">コンプライアンス</a></li>
+          <li><a href="#" class="accordion-item__link">人権の尊重</a></li>
+          <li><a href="#" class="accordion-item__link">個人情報保護に関する基本方針</a></li>
+          <li><a href="#" class="accordion-item__link">リスク管理</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  document.querySelectorAll('.accordion-item__header').forEach(button => {
+    button.addEventListener('click', () => {
+      const item = button.closest('.accordion-item');
+      const isOpen = item.classList.contains('accordion-item--open');
+
+      if (isOpen) {
+        item.classList.remove('accordion-item--open');
+        button.classList.remove('accordion-item__header--open');
+        button.setAttribute('aria-expanded', 'false');
+      } else {
+        item.classList.add('accordion-item--open');
+        button.classList.add('accordion-item__header--open');
+        button.setAttribute('aria-expanded', 'true');
+      }
+    });
+  });
+</script>

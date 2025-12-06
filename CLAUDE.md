@@ -604,3 +604,105 @@ HTML/CSS生成完了後、必ず以下の検証を実行すること。
 4. **カスタムルール**: プロジェクト固有の品質基準適用
 
 この自動化により、あなたの Figma→HTML/CSS ワークフローが **劇的に効率化** されます。
+
+---
+
+## Gulpビルドシステム
+
+### ディレクトリ構造
+
+```
+figma-to-code/
+├── output/              ← Figma素材（JSON/captures）- 参照のみ
+│   └── [project]/
+│       └── sections/
+│           ├── accordion-area/
+│           │   ├── data.json
+│           │   └── capture.png
+│           └── set/
+│               ├── data.json
+│               └── capture.png
+├── src/                 ← コーディング成果物
+│   ├── index.html       ← メインHTML（インクルード使用）
+│   ├── _includes/       ← セクションHTML
+│   │   ├── accordion-area.html
+│   │   └── set.html
+│   ├── scss/            ← Sassファイル
+│   │   ├── main.scss    ← エントリーポイント
+│   │   ├── _base.scss   ← 共通スタイル
+│   │   ├── _accordion-area.scss
+│   │   └── _set.scss
+│   └── icons/           ← SVGアイコン
+│       ├── plus.svg
+│       └── arrow-right.svg
+├── dist/                ← ビルド出力（自動生成）
+│   ├── index.html
+│   ├── css/
+│   │   ├── main.css
+│   │   └── main.min.css
+│   └── icons/
+├── package.json
+└── gulpfile.js
+```
+
+### コマンド
+
+| コマンド | 用途 | 動作 |
+|----------|------|------|
+| `npm run dev` | 開発用 | ビルド → サーバー起動 → ファイル監視 → 自動リロード |
+| `npm run build` | 本番用 | ビルドのみ（サーバー起動なし） |
+
+### 使い分け
+
+```
+開発作業中 → npm run dev
+  - ブラウザが自動で開く
+  - ファイル変更で自動リビルド＆リロード
+  - Ctrl+C で停止
+
+納品ファイル生成 → npm run build
+  - dist/ にファイル出力
+  - 圧縮版CSS（main.min.css）も生成
+  - コマンド完了後すぐ終了
+```
+
+### 新しいセクションの追加手順
+
+1. **HTMLインクルードファイルを作成**
+   ```
+   src/_includes/新セクション名.html
+   ```
+
+2. **Sassファイルを作成**
+   ```
+   src/scss/_新セクション名.scss
+   ```
+
+3. **main.scssにインポート追加**
+   ```scss
+   @import '新セクション名';
+   ```
+
+4. **index.htmlにインクルード追加**
+   ```html
+   @@include('_includes/新セクション名.html')
+   ```
+
+5. **必要ならアイコンを追加**
+   ```
+   src/icons/アイコン名.svg
+   ```
+
+### メリット
+
+- **CSS競合なし**: 各セクションが独立したSassファイル
+- **並列作業可能**: 複数ターミナルで別セクションを同時編集可能
+- **自動統合**: ビルド時に全セクションが1つのHTML/CSSに統合
+- **ホットリロード**: 変更が即座にブラウザに反映
+
+### 注意事項
+
+- `output/` 内のファイルは参照のみ（編集しない）
+- コーディング成果物は必ず `src/` 内に作成
+- ブラウザ確認は `dist/index.html` で行う
+- `npm install` は初回のみ必要（パッケージ追加時も実行）
