@@ -2,6 +2,157 @@
 
 このファイルをプロジェクトルートに配置することで、Claude Codeが自動でワークフローを認識します。
 
+---
+
+## 🚨 クイックリファレンス（必読）
+
+**CSS/HTML生成前に必ずこのセクションを確認すること。**
+
+### 1. CSS命名規則（スコープドBEM）
+
+| 階層 | 命名パターン | 例 |
+|------|-------------|-----|
+| セクション | ハイフン繋ぎ | `.chat`, `.home`, `.cart` |
+| パーツ（第1階層） | セクション名-パーツ名 | `.chat-header`, `.chat-messages` |
+| 内部要素（第2階層以下） | `.__` プレフィックス | `.__title`, `.__icon`, `.__text` |
+| Modifier | `.__` プレフィックス | `.__sent`, `.__received`, `.__active` |
+
+```scss
+// ✅ 正しい例
+.chat { ... }
+.chat-header { ... }
+.chat-header .__title { ... }
+.chat-messages .__bubble { ... }
+.chat-messages .__bubble.__sent { ... }
+
+// ❌ 間違い例
+.chat__header { ... }                    // パーツにアンダースコア使用
+.chat__message--received { ... }         // 標準BEMのModifier
+.chat-messages__bubble__text { ... }     // 深いネスト
+```
+
+### 2. HTMLタグ選択ルール（セマンティックHTML）
+
+| 用途 | 使用タグ | 禁止 |
+|------|----------|------|
+| 画像 | `<figure>` | `<div>` |
+| 画像キャプション | `<figcaption>` | `<span>`, `<p>` |
+| カード一覧（複数） | `<ul><li>` | `<div>`の羅列 |
+| 独立記事本文 | `<article>` | - |
+| ナビゲーション | `<nav>` | `<div>` |
+| セクション | `<section>` | `<div>` |
+
+```html
+<!-- ✅ 正しい例 -->
+<ul class="blog-cards">
+  <li class="blog-card">
+    <figure class="__image">
+      <img src="..." alt="...">
+    </figure>
+    <div class="__content">
+      <h3 class="__title">タイトル</h3>
+      <a href="#" class="__link">Readmore</a>
+    </div>
+  </li>
+  <li class="blog-card">...</li>
+</ul>
+
+<!-- ❌ 間違い例 -->
+<div class="blog-cards">
+  <div class="blog-card">
+    <div class="blog-card__image">
+      <img src="...">
+    </div>
+  </div>
+</div>
+```
+
+### 3. データ完全性の原則
+
+- **JSONに存在する全要素は必ずHTMLに出力する**
+- キャプチャで見えにくい要素もJSONにあれば含める
+- 要素の削除・省略は行わない
+- 修正前後でJSONのテキスト数とHTMLの要素数が一致することを確認
+
+### 3. 品質検証プロセス（概要）
+
+HTML/CSS生成後、以下を必ず実行：
+
+1. **JSON要素の全数カウント** - テキスト、色、フォント、余白、角丸などを数える
+2. **1対1マッピング表作成** - 全JSON要素にCSSの対応箇所を明記（空欄＝実装漏れ）
+3. **忠実度スコア計算** - 目標95%以上
+
+---
+
+## ⚠️ CSS生成前チェックポイント
+
+**以下の質問にすべて「はい」と答えられるまでCSS生成を開始しない：**
+
+```
+□ スコープドBEM命名規則を理解した
+  - パーツは「セクション名-パーツ名」で命名する
+  - 内部要素は「.__」プレフィックスを使う
+  - 標準BEMの「__」「--」は使わない
+
+□ JSONを全て読み込んだ
+  - テキスト要素の数を把握した
+  - 色指定（fills）の数を把握した
+  - サイズ・余白の値を確認した
+
+□ キャプチャ画像を確認した
+  - 薄い色の要素を見落としていないか確認した
+  - レイアウト構造（カラム数、行数）を把握した
+  - 繰り返しパターンの数を確認した
+
+□ 生成後に1対1マッピング検証を行う準備がある
+```
+
+---
+
+## ⚠️ 作業環境の制約
+
+### Git Worktree禁止
+- **このプロジェクトではgit worktreeを使用しない**
+- 必ずメインリポジトリ `/Users/fukumorikei/figma-to-code` で作業すること
+- 理由: worktree環境ではnpmが動作しないため
+
+---
+
+## ディレクトリ対応ルール
+
+### 基本原則
+`figma-assets/{プロジェクト名}/` の内容は `src/{プロジェクト名}/` に統合して出力する。
+
+```
+figma-assets/myproject/        →    src/myproject/
+├── gravity/                        ├── _includes/
+│   ├── figma-data.json                 ├── gravity-stats.html
+│   └── figma-capture.png               └── blog-section.html
+└── blog-section/                   ├── scss/
+    ├── figma-data.json                 ├── style.scss
+    └── figma-capture.png               ├── _gravity-stats.scss
+                                        └── _blog-section.scss
+                                    └── index.html
+```
+
+### 対応関係
+| figma-assets | src | 説明 |
+|--------------|-----|------|
+| `/{プロジェクト名}/` | `/{プロジェクト名}/` | 1プロジェクト = 1ディレクトリ |
+| `/{プロジェクト名}/{セクション}/` | `/_includes/{セクション}.html` | 各セクション = 1インクルードファイル |
+
+### 禁止事項
+- `src/` 直下に新規ディレクトリを勝手に作成しない
+- figma-assetsの各セクションを別プロジェクトとして分離しない
+
+### 作業フロー
+1. `figma-assets/{プロジェクト名}/` 内のセクション一覧を確認
+2. `src/{プロジェクト名}/` が存在するか確認（なければ作成）
+3. 各セクションを `_includes/` と `scss/` に配置
+4. `index.html` で全セクションを `@@include` で統合
+
+---
+
 ## 自動化コマンド定義
 
 ### 基本コマンド
@@ -65,6 +216,70 @@ auto-figma-all: {BASE_DIRECTORY}
 
 これで配下の全セクションを自動検出・並列処理
 
+---
+
+## ⚠️ 複数セクション処理時の必須フロー
+
+### 重要な制約
+
+複数セクションがある場合、**同時処理は品質低下を招く**。以下の理由による：
+
+| 項目 | 1セクション処理 | 複数セクション同時処理 |
+|------|----------------|----------------------|
+| キャプチャ確認 | 1枚を詳細に確認 | 複数枚で注意が分散 |
+| JSON読み込み | 数百行を精読可能 | 数千行で全部は読めない |
+| 1対1マッピング検証 | 全要素を検証可能 | 主要要素のみになりがち |
+| 品質スコア | 95%以上達成可能 | 70-80%程度に低下 |
+
+### 正しいワークフロー（必須）
+
+```
+❌ 間違い: 複数セクションを同時に処理
+セクションA,B,C → 同時生成 → 検証なし → 統合
+
+✅ 正しい: セクション単位で完結させてから統合
+セクションA → 生成 → 1対1検証 ✅ → 完了
+     ↓
+セクションB → 生成 → 1対1検証 ✅ → 完了
+     ↓
+セクションC → 生成 → 1対1検証 ✅ → 完了
+     ↓
+最終統合（HTMLを結合するだけ）
+```
+
+### 理由
+
+- **キャプチャ画像**: セクションごとに別ファイルなので、同時に比較検証できない
+- **JSONデータ**: セクションごとに独立しており、統合すると膨大になり1対1チェック不可能
+- **品質検証プロセス**: CLAUDE.mdの検証フローは「1セクション = 1キャプチャ = 1JSON」を前提に設計
+
+### 統合時のルール
+
+各セクションの検証が完了したら、以下の方法で統合：
+
+1. **HTMLの統合**
+   ```html
+   <div class="app-container">
+     @@include('_includes/section-a.html')
+   </div>
+   <div class="app-container">
+     @@include('_includes/section-b.html')
+   </div>
+   ```
+
+2. **SCSSの統合**（style.scss）
+   ```scss
+   @import 'base';
+   @import 'section-a';  // 検証済み
+   @import 'section-b';  // 検証済み
+   @import 'section-c';  // 検証済み
+   ```
+
+3. **統合時の注意**
+   - 各セクションのCSSは独立したクラス名（`.section-a`, `.section-b`等）でスコープ化済み
+   - `position: fixed` は統合時に問題になるため、セクション内に収まるスタイルに変更済みであること
+   - 統合後は全体の表示確認のみ（個別の品質検証は不要）
+
 ## カスタマイズオプション
 
 ### 品質設定
@@ -120,6 +335,244 @@ af: output/myproject/sections_02
 ```
 
 ## Figma→HTML/CSS 変換ルール
+
+### CSS命名規則（スコープドBEM）
+
+クラス名の冗長な繰り返しを避け、階層に応じた命名規則を使用する。
+
+---
+
+#### 階層ルール
+
+| 階層 | 命名 | 例 |
+|------|------|-----|
+| セクション | ハイフン繋ぎ | `.chat`, `.home`, `.cart` |
+| パーツ（第1階層） | セクション名-パーツ名 | `.chat-header`, `.chat-messages`, `.home-banner` |
+| 内部要素（第2階層以下） | `.__` プレフィックス | `.__title`, `.__icon`, `.__text` |
+| Modifier | `.__` プレフィックス（並列） | `.__sent`, `.__received`, `.__active` |
+
+**ポイント**:
+- パーツ（独立したUIブロック）はフルネームで記述し、所属セクションを明確にする
+- 内部要素とModifierは同じ`.__`を使う。区別はHTML構造で判断
+  - Element: 子要素に付与
+  - Modifier: 同じ要素に付与（パーツと並列）
+
+---
+
+#### 判断基準
+
+パーツ（フルネーム）にするかどうか：
+- **独立したUIブロック**として認識できる → フルネーム（`chat-header`）
+- **親要素の一部**として認識される → スコープド（`.__title`）
+
+例：
+- ヘッダー、メッセージエリア、入力欄 → 独立ブロック → `chat-header`, `chat-messages`, `chat-input`
+- タイトル、アイコン、ボタン → 親の一部 → `.__title`, `.__icon`, `.__btn`
+
+---
+
+#### HTML例
+
+**❌ 悪い例（冗長）:**
+```html
+<section class="chat">
+  <header class="chat__header">
+    <button class="chat__back-btn">
+      <img class="chat__icon">
+    </button>
+    <h1 class="chat__title">Brooke Davis</h1>
+  </header>
+  <div class="chat__messages">
+    <div class="chat__message chat__message--received">
+      <div class="chat__bubble chat__bubble--with-name">
+        <span class="chat__sender">Brooke</span>
+        <p class="chat__text">Hey!</p>
+      </div>
+    </div>
+  </div>
+</section>
+```
+
+**✅ 良い例（階層ルール適用）:**
+```html
+<section class="chat">
+  <!-- 第1階層: フルネーム -->
+  <header class="chat-header">
+    <!-- 第2階層以下: スコープド -->
+    <button class="__back-btn">
+      <img class="__icon">
+    </button>
+    <h1 class="__title">Brooke Davis</h1>
+  </header>
+
+  <!-- 第1階層: フルネーム -->
+  <div class="chat-messages">
+    <!-- 第2階層以下: スコープド + Modifier -->
+    <div class="__message __received">
+      <div class="__bubble __with-name">
+        <span class="__sender">Brooke</span>
+        <p class="__text">Hey!</p>
+      </div>
+    </div>
+    <div class="__message __sent">
+      <div class="__bubble">
+        <p class="__text">Hi!</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 第1階層: フルネーム -->
+  <div class="chat-input">
+    <button class="__add-btn">
+      <img class="__icon">
+    </button>
+    <input class="__field" type="text">
+  </div>
+</section>
+```
+
+---
+
+#### SCSS対応
+
+```scss
+// セクション
+.chat {
+  max-width: 375px;
+  margin: 0 auto;
+}
+
+// パーツ（第1階層）
+.chat-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 24px;
+
+  // 内部要素（第2階層以下）
+  .__back-btn {
+    width: 24px;
+    height: 24px;
+  }
+
+  .__title {
+    flex: 1;
+    text-align: center;
+    font-weight: 700;
+  }
+
+  .__icon {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+// パーツ（第1階層）
+.chat-messages {
+  padding: 16px 24px;
+
+  // 内部要素 + Modifier
+  .__message {
+    display: flex;
+    margin-bottom: 16px;
+
+    &.__received { justify-content: flex-start; }
+    &.__sent { justify-content: flex-end; }
+  }
+
+  .__bubble {
+    padding: 12px 16px;
+    border-radius: 20px;
+
+    &.__with-name { padding-top: 8px; }
+  }
+
+  // received/sent による色分け
+  .__message.__received .__bubble {
+    background: #f7f9fe;
+  }
+
+  .__message.__sent .__bubble {
+    background: #006ffd;
+    color: #fff;
+  }
+
+  .__sender {
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .__text {
+    font-size: 14px;
+  }
+}
+
+// パーツ（第1階層）
+.chat-input {
+  display: flex;
+  align-items: center;
+  padding: 12px 24px;
+
+  .__add-btn { ... }
+  .__field { ... }
+}
+```
+
+---
+
+#### Modifier（状態変化・バリエーション）
+
+```html
+<!-- パーツ + Modifier -->
+<div class="accordion-item __open">
+  <button class="__header">...</button>
+</div>
+
+<!-- 複数Modifier -->
+<a href="#" class="set-button __primary __large">
+```
+
+```scss
+.accordion-item {
+  .__header { ... }
+  .__content { display: none; }
+
+  // Modifier
+  &.__open {
+    .__header { background: #fef8db; }
+    .__content { display: block; }
+  }
+}
+
+.set-button {
+  &.__primary { background: linear-gradient(...); }
+  &.__secondary { border: 2px solid transparent; }
+  &.__large { padding: 24px 48px; }
+}
+```
+
+---
+
+#### 疑似要素の活用（HTML削減）
+
+以下はCSSで実現し、HTMLから削除する：
+
+| 要素 | CSS実装 |
+|------|---------|
+| アンダーライン | `::after` |
+| アイコン（固定） | `background-image` または `::before` |
+| 装飾線 | `border` または `::before/::after` |
+
+---
+
+#### まとめ
+
+- **セクション**: ページの大きな区切り（例: `chat`, `home`）
+- **パーツ**: セクション名-パーツ名でフルネーム記述（例: `chat-header`, `chat-messages`）
+- **内部要素**: `.__` で子要素を表現（例: `.__title`, `.__icon`）
+- **Modifier**: `.__` でバリエーション・状態を表現。パーツと並列に付与（例: `__sent`, `__received`）
+- **疑似要素**: 装飾的な要素はCSS `::before/::after` で実現
+
+**CSS変数との混同回避**: `--`はCSS Custom Propertiesで使われるため、Modifierには`.__`を採用。
 
 ### データ完全性の原則
 - JSONに存在する全テキスト要素は必ずHTMLに含める
@@ -417,6 +870,79 @@ filter: brightness(0) saturate(100%) invert(61%) sepia(89%) saturate(1000%) hue-
 
 この方式では`currentColor`が使用可能。
 
+## ⛔ 実装開始前の必須ゲート（CSS/HTML生成禁止条件）
+
+> **重要**: 以下の条件を満たすまで、CSS/HTMLの生成を開始してはならない。
+> このゲートを省略した場合、JSONの値を「だいたい」で丸めてしまい、設計との乖離が発生する。
+
+### 必須完了条件
+
+1. **PC用マッピング表の作成・出力**
+   - desktop/figma-data.json の全要素を表形式で出力済み
+   - サイズ・余白・色・フォントの具体的な数値を全て記載済み
+
+2. **SP用マッピング表の作成・出力**（mobileフォルダが存在する場合）
+   - mobile/figma-data.json の全要素を表形式で出力済み
+   - PC版との差異を明確に記載済み
+
+3. **要素幅の確認**（グリッドレイアウトの場合）
+   - 各カラムの実際の幅（px）をJSONから取得済み
+   - 全幅均等分割なのか、固定幅なのかを判断済み
+
+### 禁止事項
+
+- マッピング表を作成せずにCSSを書き始めること
+- JSONの数値を確認せずに「だいたい○○px」と丸めること
+- PC版のみ確認してSP版を後回しにすること
+
+---
+
+## モバイル素材がない場合のルール
+
+### 優先順位
+
+1. **mobile/フォルダが存在する** → mobile/figma-data.jsonの値を使用
+2. **mobile/フォルダが存在しない** → 以下のいずれかを選択
+
+### 選択肢
+
+#### A. デスクトップのみ実装（推奨）
+- メディアクエリを追加しない
+- モバイル対応は素材が用意されてから実施
+
+#### B. 推測で実装（最後の手段）
+- クライアント要望でSP対応が必須の場合のみ
+- SCSSに必ず警告コメントを追加する
+
+```scss
+// モバイル対応
+// ⚠️ SP素材なし - 以下は推測値。正確な実装にはmobile/フォルダのJSON/キャプチャが必要
+@media (max-width: 767px) {
+  .section-name {
+    padding: 0 20px; // 推測値
+
+    &__list {
+      grid-template-columns: 1fr; // 推測値
+    }
+  }
+}
+```
+
+### コメント記載ルール
+
+推測値には必ず `// 推測値` コメントを付ける。これにより：
+- 後から見ても「どこがJSON準拠で、どこが推測か」が明確になる
+- モバイル素材が追加された際に修正箇所がわかる
+
+### チェックリスト（全て完了するまでCSS生成禁止）
+
+- [ ] PC用JSONを読み込み、マッピング表を出力した
+- [ ] SP用JSONを読み込み、マッピング表を出力した（存在する場合）
+- [ ] 全てのpadding/margin/gap/width値を数値で記載した
+- [ ] マッピング表に空欄がない
+
+---
+
 ## 品質検証プロセス（AI自己検証）
 
 > **注意**: このプロジェクトでは外部ツール（Node.js等）に依存せず、AI自身が品質検証を行います。
@@ -609,41 +1135,132 @@ HTML/CSS生成完了後、必ず以下の検証を実行すること。
 
 ## Gulpビルドシステム
 
-### ディレクトリ構造
+### ディレクトリ構造（プロジェクト単位）
 
 ```
 figma-to-code/
-├── output/              ← Figma素材（JSON/captures）- 参照のみ
-│   └── [project]/
+├── figma-assets/                    ← Figma素材（JSON/captures）- 参照のみ
+│   └── [project-name]/
+│       ├── sections.json
 │       └── sections/
-│           ├── accordion-area/
-│           │   ├── data.json
-│           │   └── capture.png
-│           └── set/
-│               ├── data.json
-│               └── capture.png
-├── src/                 ← コーディング成果物
-│   ├── index.html       ← メインHTML（インクルード使用）
-│   ├── _includes/       ← セクションHTML
-│   │   ├── accordion-area.html
-│   │   └── set.html
-│   ├── scss/            ← Sassファイル
-│   │   ├── main.scss    ← エントリーポイント
-│   │   ├── _base.scss   ← 共通スタイル
-│   │   ├── _accordion-area.scss
-│   │   └── _set.scss
-│   └── icons/           ← SVGアイコン
-│       ├── plus.svg
-│       └── arrow-right.svg
-├── dist/                ← ビルド出力（自動生成）
-│   ├── index.html
-│   ├── css/
-│   │   ├── main.css
-│   │   └── main.min.css
-│   └── icons/
+│           ├── hero/
+│           │   ├── desktop/
+│           │   │   ├── figma-data.json
+│           │   │   └── figma-capture.png
+│           │   └── mobile/          ← 存在する場合のみ
+│           │       ├── figma-data.json
+│           │       └── figma-capture.png
+│           └── cart/
+│               └── desktop/
+│                   ├── figma-data.json
+│                   └── figma-capture.png
+├── src/                             ← コーディング成果物（プロジェクト単位）
+│   └── [project-name]/
+│       ├── index.html               ← メインHTML（Gulpで統合）
+│       ├── _includes/               ← セクション（サブディレクトリ形式）
+│       │   ├── hero/
+│       │   │   ├── index.html       ← 本番用HTML（Gulp統合対象）
+│       │   │   ├── style.scss       ← 本番用SCSS（base含む）
+│       │   │   ├── preview.html     ← プレビュー用HTML（ビルド不要で即確認）
+│       │   │   ├── style.css        ← プレビュー用CSS（SCSSコンパイル済）
+│       │   │   └── capture.png      ← Figmaキャプチャ（比較用）
+│       │   └── cart/
+│       │       ├── index.html
+│       │       ├── style.scss
+│       │       ├── preview.html
+│       │       ├── style.css
+│       │       └── capture.png
+│       ├── scss/                    ← Gulpビルド用（統合SCSS）
+│       │   ├── style.scss           ← エントリーポイント
+│       │   ├── _base.scss           ← 共通スタイル
+│       │   ├── _hero.scss           ← セクション別SCSS（_includes/から同期）
+│       │   └── _cart.scss
+│       └── icons/                   ← SVGアイコン
+│           └── arrow-right.svg
+├── dist/                            ← ビルド出力（プロジェクト単位）
+│   └── [project-name]/
+│       ├── index.html
+│       ├── css/
+│       │   ├── style.css
+│       │   └── style.min.css
+│       └── icons/
 ├── package.json
 └── gulpfile.js
 ```
+
+### ファイルの役割（重要）
+
+| ファイル | 役割 | 用途 |
+|----------|------|------|
+| `_includes/{section}/index.html` | 本番用HTML | Gulpでindex.htmlに統合 |
+| `_includes/{section}/style.scss` | 本番用SCSS | base含む。preview.html用にコンパイル |
+| `_includes/{section}/preview.html` | プレビュー用 | ビルド不要で即確認。開発中の視覚チェック |
+| `_includes/{section}/style.css` | プレビュー用CSS | npx sassでコンパイル |
+| `_includes/{section}/capture.png` | 比較用キャプチャ | preview.htmlと並べて確認 |
+| `scss/_{section}.scss` | Gulp統合用 | style.scssからimport。base含まない |
+
+### 出力先ルール（重要）
+
+AIがHTML/SCSSを生成する際、**プロジェクト名は `figma-assets/{project-name}/` から自動判定**する。
+
+| 素材パス | 出力先 |
+|---------|--------|
+| `figma-assets/project-a/sections/cart/desktop/` | `src/project-a/_includes/cart/index.html`<br>`src/project-a/_includes/cart/style.scss`<br>`src/project-a/_includes/cart/preview.html`<br>`src/project-a/_includes/cart/style.css`<br>`src/project-a/_includes/cart/capture.png` |
+
+### 新ワークフロー（セクション単位での即時確認）
+
+```
+Step 1: 素材の読み込み
+  場所: figma-assets/{project}/sections/{section}/desktop/
+  - figma-data.json を読み込む
+  - figma-capture.png を確認する
+  ↓
+Step 2: マッピング表作成（CSS生成前の必須ゲート）
+  - JSONの全要素を表形式で出力
+  ↓
+Step 3: セクションフォルダに出力
+  出力先: src/{project}/_includes/{section}/
+  - index.html     ← 本番用HTML
+  - style.scss     ← SCSS（base含む）
+  ↓
+Step 4: プレビューファイル生成
+  - preview.html   ← 即確認用HTML
+  - style.css      ← npx sass でコンパイル
+  - capture.png    ← figma-assetsからコピー
+  ↓
+Step 5: 即時視覚確認（Gulpビルド不要！）
+  preview.html をブラウザで開き、capture.png と並べて比較
+  ↓
+Step 6: 修正（差異があった場合）
+  style.scss を修正 → npx sass で再コンパイル → 即確認
+  ↓
+Step 7: 統合（全セクション完了後）
+  - scss/_{section}.scss に本体部分をコピー
+  - npm run build で全体統合
+```
+
+### プレビューファイルのコンパイル方法
+
+```bash
+# セクション単位でSCSSをコンパイル
+npx sass src/{project}/_includes/{section}/style.scss src/{project}/_includes/{section}/style.css
+
+# 例
+npx sass src/f/_includes/accordion-area/style.scss src/f/_includes/accordion-area/style.css
+```
+
+### セクション単体チェックの方法（新フロー）
+
+各セクションの `_includes/{セクション名}/` ディレクトリを開き：
+1. `preview.html` をブラウザで表示（ビルド不要）
+2. 同じフォルダの `capture.png` と並べて比較
+3. JSONの値とCSSが1対1で一致しているか検証
+4. 差異があれば `style.scss` を修正 → `npx sass` で再コンパイル → 即確認
+
+**メリット**:
+- Gulpビルドを待たずに即座に確認できる
+- 複数ターミナルで並列開発可能
+- capture.pngが同じフォルダにあるので比較が容易
 
 ### コマンド
 
@@ -652,49 +1269,49 @@ figma-to-code/
 | `npm run dev` | 開発用 | ビルド → サーバー起動 → ファイル監視 → 自動リロード |
 | `npm run build` | 本番用 | ビルドのみ（サーバー起動なし） |
 
-### 使い分け
-
-```
-開発作業中 → npm run dev
-  - ブラウザが自動で開く
-  - ファイル変更で自動リビルド＆リロード
-  - Ctrl+C で停止
-
-納品ファイル生成 → npm run build
-  - dist/ にファイル出力
-  - 圧縮版CSS（main.min.css）も生成
-  - コマンド完了後すぐ終了
 ```
 
 ### 新しいセクションの追加手順
 
-1. **HTMLインクルードファイルを作成**
+1. **セクションディレクトリを作成**
    ```
-   src/_includes/新セクション名.html
-   ```
-
-2. **Sassファイルを作成**
-   ```
-   src/scss/_新セクション名.scss
+   src/{project-name}/_includes/新セクション名/
    ```
 
-3. **main.scssにインポート追加**
+2. **HTMLファイルを作成**
+   ```
+   src/{project-name}/_includes/新セクション名/index.html
+   ```
+
+3. **キャプチャをコピー**
+   ```
+   figma-assets/{project-name}/sections/新セクション名/desktop/capture.png
+   → src/{project-name}/_includes/新セクション名/capture.png
+   ```
+
+4. **Sassファイルを作成**
+   ```
+   src/{project-name}/scss/_新セクション名.scss
+   ```
+
+5. **style.scssにインポート追加**
    ```scss
    @import '新セクション名';
    ```
 
-4. **index.htmlにインクルード追加**
+6. **メインindex.htmlにインクルード追加**
    ```html
-   @@include('_includes/新セクション名.html')
+   @@include('_includes/新セクション名/index.html')
    ```
 
-5. **必要ならアイコンを追加**
+7. **必要ならアイコンを追加**
    ```
-   src/icons/アイコン名.svg
+   src/{project-name}/icons/アイコン名.svg
    ```
 
 ### メリット
 
+- **プロジェクト分離**: 複数案件が混在しない
 - **CSS競合なし**: 各セクションが独立したSassファイル
 - **並列作業可能**: 複数ターミナルで別セクションを同時編集可能
 - **自動統合**: ビルド時に全セクションが1つのHTML/CSSに統合
@@ -702,7 +1319,7 @@ figma-to-code/
 
 ### 注意事項
 
-- `output/` 内のファイルは参照のみ（編集しない）
-- コーディング成果物は必ず `src/` 内に作成
-- ブラウザ確認は `dist/index.html` で行う
+- `figma-assets/` 内のファイルは参照のみ（編集しない）
+- コーディング成果物は必ず `src/{project-name}/` 内に作成
+- ブラウザ確認は `dist/{project-name}/index.html` で行う
 - `npm install` は初回のみ必要（パッケージ追加時も実行）

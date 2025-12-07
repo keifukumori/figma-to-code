@@ -5,7 +5,7 @@ const path = require('path');
 
 // 設定
 const FIGMA_TOKEN = process.env.FIGMA_TOKEN || 'YOUR_FIGMA_TOKEN';
-const OUTPUT_BASE = process.env.OUTPUT_DIR || './output';
+const OUTPUT_BASE = process.env.OUTPUT_DIR || './figma-assets';
 
 function extractFileKeyAndNodeId(input) {
   const urlMatch = input.match(/figma\.com\/(?:file|design)\/([a-zA-Z0-9]+).*node-id=([0-9-]+)/);
@@ -201,8 +201,8 @@ async function main() {
 
     console.log('\n✅ レスポンシブ対応完了！');
     console.log('🚀 Next: Claude Code でレスポンシブHTML/CSS生成');
-    console.log(`   cd output/${toDirectoryName(pageName)}`);
-    console.log(`   claude → PROMPT-COMPLETE.md の内容を実行`);
+    console.log(`   cd figma-assets/${toDirectoryName(pageName)}`);
+    console.log(`   claude → 3-PROMPT-SAFE.md の内容を実行`);
     return;
   }
 
@@ -335,7 +335,7 @@ async function processVersion(input, pageName, deviceType) {
     console.log(`\n🚀 Next: Run Claude Code to generate/update HTML`);
     console.log(`   cd ${pageDir}`);
     console.log(`   claude`);
-    console.log(`   → PROMPT.md の内容を実行`);
+    console.log(`   → 3-PROMPT-SAFE.md の内容を実行`);
   }
 }
 

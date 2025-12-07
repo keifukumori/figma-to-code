@@ -33,7 +33,7 @@ FIGMA_URL_MOBILE=https://figma.com/design/...?node-id=mobile-id
 # 単一URL（旧方式）
 FIGMA_URL=https://figma.com/design/...?node-id=...
 
-OUTPUT_DIR=./output
+OUTPUT_DIR=./figma-assets
 ```
 
 ## 🚀 基本的な使い方
@@ -54,7 +54,7 @@ node 1A-fetch-figma.js
 
 # Step 2: AIでコード生成
 claude
-# → プロンプト: "output/page-name で 2-PROMPT-COMPLETE.md を実行してください"
+# → プロンプト: "figma-assets/page-name で 3-PROMPT-SAFE.md を実行してください"
 ```
 
 **以上！** セマンティックHTML + レスポンシブSCSSが生成されます。
@@ -74,7 +74,7 @@ node 1A-fetch-figma.js "https://figma.com/...?node-id=..." page-name
 
 # Step 2: セマンティックHTML/SCSS生成
 claude
-# → プロンプト: "output/page-name で 2-PROMPT-COMPLETE.md を実行してください"
+# → プロンプト: "figma-assets/page-name で 3-PROMPT-SAFE.md を実行してください"
 ```
 
 ### 方法2: 複数プロジェクト一括処理
@@ -106,20 +106,20 @@ node 1B-fetch-figma-batch.js urls.csv
 **処理内容**:
 - 各プロジェクトのデスクトップ・モバイル版を順次取得
 - API制限対策で自動的に待機時間を設定
-- `output/portfolio/`, `output/ecommerce/` 等のディレクトリを生成
+- `figma-assets/portfolio/`, `figma-assets/ecommerce/` 等のディレクトリを生成
 
 #### Step 2: 各プロジェクトでコード生成
 
 ```bash
 claude
-# → プロンプト例: "output/portfolio で 2-PROMPT-COMPLETE.md を実行してください"
-# → プロンプト例: "output/ecommerce で 2-PROMPT-COMPLETE.md を実行してください"
+# → プロンプト例: "figma-assets/portfolio で 3-PROMPT-SAFE.md を実行してください"
+# → プロンプト例: "figma-assets/ecommerce で 3-PROMPT-SAFE.md を実行してください"
 ```
 
 ## 📁 出力構造
 
 ```
-output/
+figma-assets/
 └── [page-name]/
     ├── sections.json              # セクション管理ファイル
     └── sections/
@@ -191,7 +191,7 @@ Figma API（無料版）には厳しい制限があります：
 
 ## 📚 ドキュメント
 
-- `2-PROMPT-COMPLETE.md`: AI用プロンプト（現行推奨版）
+- `3-PROMPT-SAFE.md`: AI用プロンプト（現行推奨版）
 - `DEVELOPMENT-NOTES.md`: 開発経緯と技術的判断
 - `BOTSU-*`: 古いバージョン（使用禁止）
 

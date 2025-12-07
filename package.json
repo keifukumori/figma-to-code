@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "gulp",
     "build": "gulp build",
+    "preview:build": "gulp previewStyles",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -22,6 +23,9 @@
     "gulp-file-include": "^2.3.0",
     "gulp-rename": "^2.0.0",
     "gulp-sass": "^5.1.0",
+    "pixelmatch": "^7.1.0",
+    "playwright": "^1.57.0",
+    "pngjs": "^7.0.0",
     "sass": "^1.94.2"
   }
 }
