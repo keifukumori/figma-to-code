@@ -4,6 +4,55 @@
 
 ---
 
+## ⛔ 最優先: JSON前処理（絶対に最初に実行）
+
+> **警告**: figma-data.json は数MB〜数十MBになることがあり、AIが直接読み込むとコンテキストを圧迫します。
+> **必ず以下のスクリプトを最初に実行し、extracted.md を生成してから作業を開始してください。**
+
+### 実行コマンド
+```bash
+python3 scripts/extract_figma.py {パス}/figma-data.json
+```
+
+### 例
+```bash
+# デスクトップ版
+python3 scripts/extract_figma.py figma-assets/sample/sections/pricing/desktop/figma-data.json
+
+# モバイル版（存在する場合）
+python3 scripts/extract_figma.py figma-assets/sample/sections/pricing/mobile/figma-data.json
+```
+
+### 結果
+- 入力: `figma-data.json` (5MB+)
+- 出力: `extracted.md` (10KB程度) ← **これを読む**
+- サイズ削減率: 99%以上
+
+### ワークフロー
+```
+1. python3 scripts/extract_figma.py でextracted.md生成
+
+2. キャプチャ画像(figma-capture.png)で構造把握 ← 重要！
+   - 全体レイアウト: カラム数、行数、配置パターン
+   - 要素の種類: 見出し、本文、ボタン、リンク、画像、アイコン
+   - 要素の数: テキスト○個、ボタン○個、カード○枚など
+   - 繰り返しパターン: 同じ構造が何回あるか
+   - 特殊要素: ハイライト、装飾線、グラデーション
+   ※詳細は「構造把握チェックポイント」セクション参照
+
+3. extracted.md を読み込む（JSONは読まない！）
+   - 構造把握した内容と数値データを突き合わせる
+
+4. HTML/CSS生成
+
+5. 品質検証
+```
+
+**❌ 禁止**: figma-data.json を直接 Read ツールで読み込むこと
+**✅ 正解**: extracted.md を読み込むこと
+
+---
+
 ## 🚨 クイックリファレンス（必読）
 
 **CSS/HTML生成前に必ずこのセクションを確認すること。**
@@ -194,91 +243,19 @@ auto-figma: {DIRECTORY_PATH}
 例: `auto-figma: output/myproject/sections_02`
 
 これで以下を自動実行:
-1. 構造分析 (配置・カラム・要素把握)
-2. JSON詳細抽出 (サイズ・位置・色の網羅的取得)
-3. CSS正確マッピング (2-FIGMA_TO_CSS_QUALITY_CHECKLIST.md準拠)
+1. **JSON前処理スクリプト実行** (大きなJSONを軽量Markdownに変換)
+   ```bash
+   python3 scripts/extract_figma.py {DIRECTORY}/figma-data.json
+   ```
+   → `extracted.md` が生成される（99%サイズ削減）
+2. 構造分析 (キャプチャ画像 + extracted.md で配置・カラム・要素把握)
+3. CSS正確マッピング (extracted.mdの値をそのまま使用)
 4. HTML/CSS生成 (3-PROMPT-SAFE.md実行)
 5. 品質検証 (AI自己検証 - 下記「品質検証プロセス」参照)
 
-#### 並列処理
-```
-auto-figma-parallel: {BASE_DIRECTORY} --sections=3
-```
-例: `auto-figma-parallel: output/myproject --sections=3`
-
-これで同時3セクション並列処理を実行
-
-#### 全セクション一括処理
-```
-auto-figma-all: {BASE_DIRECTORY}
-```
-例: `auto-figma-all: output/myproject`
-
-これで配下の全セクションを自動検出・並列処理
-
 ---
 
-## ⚠️ 複数セクション処理時の必須フロー
-
-### 重要な制約
-
-複数セクションがある場合、**同時処理は品質低下を招く**。以下の理由による：
-
-| 項目 | 1セクション処理 | 複数セクション同時処理 |
-|------|----------------|----------------------|
-| キャプチャ確認 | 1枚を詳細に確認 | 複数枚で注意が分散 |
-| JSON読み込み | 数百行を精読可能 | 数千行で全部は読めない |
-| 1対1マッピング検証 | 全要素を検証可能 | 主要要素のみになりがち |
-| 品質スコア | 95%以上達成可能 | 70-80%程度に低下 |
-
-### 正しいワークフロー（必須）
-
-```
-❌ 間違い: 複数セクションを同時に処理
-セクションA,B,C → 同時生成 → 検証なし → 統合
-
-✅ 正しい: セクション単位で完結させてから統合
-セクションA → 生成 → 1対1検証 ✅ → 完了
-     ↓
-セクションB → 生成 → 1対1検証 ✅ → 完了
-     ↓
-セクションC → 生成 → 1対1検証 ✅ → 完了
-     ↓
-最終統合（HTMLを結合するだけ）
-```
-
-### 理由
-
-- **キャプチャ画像**: セクションごとに別ファイルなので、同時に比較検証できない
-- **JSONデータ**: セクションごとに独立しており、統合すると膨大になり1対1チェック不可能
-- **品質検証プロセス**: CLAUDE.mdの検証フローは「1セクション = 1キャプチャ = 1JSON」を前提に設計
-
-### 統合時のルール
-
-各セクションの検証が完了したら、以下の方法で統合：
-
-1. **HTMLの統合**
-   ```html
-   <div class="app-container">
-     @@include('_includes/section-a.html')
-   </div>
-   <div class="app-container">
-     @@include('_includes/section-b.html')
-   </div>
-   ```
-
-2. **SCSSの統合**（style.scss）
-   ```scss
-   @import 'base';
-   @import 'section-a';  // 検証済み
-   @import 'section-b';  // 検証済み
-   @import 'section-c';  // 検証済み
-   ```
-
-3. **統合時の注意**
-   - 各セクションのCSSは独立したクラス名（`.section-a`, `.section-b`等）でスコープ化済み
-   - `position: fixed` は統合時に問題になるため、セクション内に収まるスタイルに変更済みであること
-   - 統合後は全体の表示確認のみ（個別の品質検証は不要）
+> **並列処理について**: 並列処理機能は現在停止中です。詳細は `CLAUDE-PARALLEL.md` を参照してください。
 
 ## カスタマイズオプション
 
@@ -292,25 +269,17 @@ auto-figma: {DIRECTORY} --target-score=98 --strict-validation
 auto-figma: {DIRECTORY} --output-format=scss --naming-convention=bem
 ```
 
-### 並列制御
-```
-auto-figma-parallel: {DIRECTORY} --max-concurrent=5 --batch-size=3
-```
-
 ## エイリアス定義
 
 ### 最短コマンド（1単語）
 ```
 af: output/myproject/sections_02
-ap: output/myproject --parallel
-aa: output/myproject --all
 ```
 
 ## 実装の利点
 
 ### **効率化指標**
 - **入力時間**: 95%短縮 (長文指示 → 1単語)
-- **処理時間**: 60%短縮 (並列処理)
 - **エラー率**: 80%削減 (自動品質チェック)
 - **一貫性**: 100%向上 (標準化されたワークフロー)
 
@@ -320,7 +289,7 @@ aa: output/myproject --all
 ```
 1. "次のディレクトリ内にあるジェイソンとキャプチャーを確認してください。output/myproject/sections_02 まずは構造的な内容を把握 どのようなものが配置されているか、カラムはいくつあるか、テキストやボタンリンクはいくつあるか それぞれどのように配置されているか"
 
-2. "次は詳細を把握 jsonの内容を細かく調査して先ほどの構造的に把握した内容とすり合わせる 各ボタンのサイズ、位置、パディング、マージンを網羅的に取得。それらをCSSに正確に反映しjsonの内容と齟齬がないことを確認する。マッピングする。その際部分的な修正のみにとどまると構造的な破綻を起こす可能性が高いので、周辺の構造的な内容や影響も調査した上で、該当箇所の正確な数値を反映する。jsonとcss でマッチしていない要素については再度マッピングをやり直す 2-FIGMA_TO_CSS_QUALITY_CHECKLIST.md このファイルの内容確認して要件を満たすようにしてください マッピングできたらファイルとして出力して"
+2. "次は詳細を把握 extracted.md,extracted-sp.mdの内容を細かく調査して先ほどの構造的に把握した内容とすり合わせる 各ボタンのサイズ、位置、パディング、マージンを網羅的に取得。それらをCSSに正確に反映しextracted.md,extracted-sp.mdの内容と齟齬がないことを確認する。マッピングする。その際部分的な修正のみにとどまると構造的な破綻を起こす可能性が高いので、周辺の構造的な内容や影響も調査した上で、該当箇所の正確な数値を反映する。extracted.md,extracted-sp.mdとcss でマッチしていない要素については再度マッピングをやり直す 2-FIGMA_TO_CSS_QUALITY_CHECKLIST.md このファイルの内容確認して要件を満たすようにしてください マッピングできたらファイルとして出力して"
 
 3. "その工程が完了したらそれらをもとに次のファイルの内容をプロンプトとして実行して 3-PROMPT-SAFE.md"
 
@@ -779,6 +748,68 @@ document.addEventListener('DOMContentLoaded', function() {
 - **原因**: セルの下端と水平線が接していたのを「またがっている」と誤認
 - **教訓**: 「接している」と「またがっている」は座標値で厳密に判断する
 
+## JSON前処理スクリプト（大容量JSON対策）
+
+### 問題
+- Figma JSONは数MB〜数十MBになることがある
+- AIのコンテキスト制限により、大きなJSONは全て読み込めない
+- 読み込めないと値の取りこぼしが発生する
+
+### 解決策
+Pythonスクリプトで事前にJSONを軽量なMarkdownに変換する。
+
+### スクリプトの場所
+```
+/Users/fukumorikei/figma-to-code/scripts/extract_figma.py
+```
+
+### 使用方法
+```bash
+python3 scripts/extract_figma.py {JSONファイルパス}
+```
+
+### 出力例
+```
+Reading: figma-assets/sample/figma-data.json
+Extracting...
+
+✅ Output: figma-assets/sample/extracted.md
+   Texts: 32
+   Frames: 52
+   Vectors: 64
+
+✅ No warnings
+```
+
+### 出力ファイル（extracted.md）の内容
+- **Texts**: テキスト要素（fontSize, fontWeight, lineHeight, color）
+- **Frames**: フレーム/コンポーネント（width, height, padding, gap, cornerRadius, backgroundColor）
+- **Vectors**: アイコン（width, height, fill, stroke）
+
+### 効果
+| 項目 | Before | After |
+|------|--------|-------|
+| ファイルサイズ | 5.5MB | 10KB |
+| 行数 | 79,689行 | 176行 |
+| 削減率 | - | **99.8%** |
+
+### 警告機能
+スクリプトが値を取得できなかった場合、警告を出力する：
+```
+⚠️ fontSize未取得: Title (path: /Pricing/Header/Title)
+```
+
+警告が出た場合：
+1. grepで該当箇所を調査
+2. スクリプトを修正（パスの変更等）
+3. 再実行して警告が消えることを確認
+
+### ワークフロー統合
+`auto-figma` コマンド実行時、最初にこのスクリプトが自動実行される。
+生成された `extracted.md` を読み込んでCSS生成を行う。
+
+---
+
 ## SVGアイコン外部ファイル化ルール
 
 ### 必須: SVGはHTML内にインラインで記述しない
@@ -899,40 +930,52 @@ filter: brightness(0) saturate(100%) invert(61%) sepia(89%) saturate(1000%) hue-
 
 ## モバイル素材がない場合のルール
 
-### 優先順位
+### 優先順位（絶対遵守）
 
-1. **mobile/フォルダが存在する** → mobile/figma-data.jsonの値を使用
-2. **mobile/フォルダが存在しない** → 以下のいずれかを選択
+1. **mobile/フォルダが存在する** → **必ず** mobile/figma-data.jsonの値を使用する
+2. **mobile/フォルダが存在しない** → PC版を元に推測でレスポンシブ対応を実装する
 
-### 選択肢
+### SP素材がある場合（最優先）
 
-#### A. デスクトップのみ実装（推奨）
-- メディアクエリを追加しない
-- モバイル対応は素材が用意されてから実施
-
-#### B. 推測で実装（最後の手段）
-- クライアント要望でSP対応が必須の場合のみ
-- SCSSに必ず警告コメントを追加する
+mobile/フォルダが存在する場合、**必ずその値に従う**。推測で上書きしてはならない。
 
 ```scss
-// モバイル対応
-// ⚠️ SP素材なし - 以下は推測値。正確な実装にはmobile/フォルダのJSON/キャプチャが必要
+// ✅ 正しい例: SP素材の値をそのまま使用
 @media (max-width: 767px) {
   .section-name {
-    padding: 0 20px; // 推測値
+    padding: 16px 20px; // mobile/figma-data.jsonの値
+    gap: 12px;          // mobile/figma-data.jsonの値
+  }
+}
+```
 
-    &__list {
-      grid-template-columns: 1fr; // 推測値
+### SP素材がない場合（フォールバック）
+
+mobile/フォルダが存在しない場合、PC版を元に推測でレスポンシブ対応を実装する。
+
+```scss
+// SP素材なしのため推測で実装
+@media (max-width: 767px) {
+  .section-name {
+    padding: 0 20px;
+
+    .__list {
+      grid-template-columns: 1fr;
     }
   }
 }
 ```
 
-### コメント記載ルール
+### 推測実装の基本ルール
 
-推測値には必ず `// 推測値` コメントを付ける。これにより：
-- 後から見ても「どこがJSON準拠で、どこが推測か」が明確になる
-- モバイル素材が追加された際に修正箇所がわかる
+SP素材がない場合の推測基準：
+- **カラム数**: 2列以上 → 1列に変更
+- **横並び**: flex-direction: row → column に変更
+- **フォントサイズ**: PC版の80-90%程度に縮小（最小14px）
+- **余白**: PC版の60-80%程度に縮小
+- **max-width**: 100%に変更し、左右に20px程度のpadding
+
+> **注意**: SP素材が後から追加された場合は、推測部分を素材の値で上書きすること。
 
 ### チェックリスト（全て完了するまでCSS生成禁止）
 
@@ -1162,14 +1205,12 @@ figma-to-code/
 │       │   │   ├── index.html       ← 本番用HTML（Gulp統合対象）
 │       │   │   ├── style.scss       ← 本番用SCSS（base含む）
 │       │   │   ├── preview.html     ← プレビュー用HTML（ビルド不要で即確認）
-│       │   │   ├── style.css        ← プレビュー用CSS（SCSSコンパイル済）
-│       │   │   └── capture.png      ← Figmaキャプチャ（比較用）
+│       │   │   └── style.css        ← プレビュー用CSS（SCSSコンパイル済）
 │       │   └── cart/
 │       │       ├── index.html
 │       │       ├── style.scss
 │       │       ├── preview.html
-│       │       ├── style.css
-│       │       └── capture.png
+│       │       └── style.css
 │       ├── scss/                    ← Gulpビルド用（統合SCSS）
 │       │   ├── style.scss           ← エントリーポイント
 │       │   ├── _base.scss           ← 共通スタイル
@@ -1196,8 +1237,9 @@ figma-to-code/
 | `_includes/{section}/style.scss` | 本番用SCSS | base含む。preview.html用にコンパイル |
 | `_includes/{section}/preview.html` | プレビュー用 | ビルド不要で即確認。開発中の視覚チェック |
 | `_includes/{section}/style.css` | プレビュー用CSS | npx sassでコンパイル |
-| `_includes/{section}/capture.png` | 比較用キャプチャ | preview.htmlと並べて確認 |
 | `scss/_{section}.scss` | Gulp統合用 | style.scssからimport。base含まない |
+
+> **注意**: `capture.png` はsrcにコピーしない。確認時は `figma-assets/` 内のキャプチャを直接参照する。
 
 ### 出力先ルール（重要）
 
@@ -1205,7 +1247,7 @@ AIがHTML/SCSSを生成する際、**プロジェクト名は `figma-assets/{pro
 
 | 素材パス | 出力先 |
 |---------|--------|
-| `figma-assets/project-a/sections/cart/desktop/` | `src/project-a/_includes/cart/index.html`<br>`src/project-a/_includes/cart/style.scss`<br>`src/project-a/_includes/cart/preview.html`<br>`src/project-a/_includes/cart/style.css`<br>`src/project-a/_includes/cart/capture.png` |
+| `figma-assets/project-a/sections/cart/desktop/` | `src/project-a/_includes/cart/index.html`<br>`src/project-a/_includes/cart/style.scss`<br>`src/project-a/_includes/cart/preview.html`<br>`src/project-a/_includes/cart/style.css` |
 
 ### 新ワークフロー（セクション単位での即時確認）
 
@@ -1226,10 +1268,9 @@ Step 3: セクションフォルダに出力
 Step 4: プレビューファイル生成
   - preview.html   ← 即確認用HTML
   - style.css      ← npx sass でコンパイル
-  - capture.png    ← figma-assetsからコピー
   ↓
 Step 5: 即時視覚確認（Gulpビルド不要！）
-  preview.html をブラウザで開き、capture.png と並べて比較
+  preview.html をブラウザで開き、figma-assets内のキャプチャと比較して確認
   ↓
 Step 6: 修正（差異があった場合）
   style.scss を修正 → npx sass で再コンパイル → 即確認
@@ -1241,35 +1282,38 @@ Step 7: 統合（全セクション完了後）
 
 ### プレビューファイルのコンパイル方法
 
+**重要**: Claude Codeのシェルではnvmのパスが通っていないため、必ず`source ~/.nvm/nvm.sh &&`を先頭に付けること。
+
 ```bash
 # セクション単位でSCSSをコンパイル
-npx sass src/{project}/_includes/{section}/style.scss src/{project}/_includes/{section}/style.css
+source ~/.nvm/nvm.sh && npx sass src/{project}/_includes/{section}/style.scss src/{project}/_includes/{section}/style.css
 
 # 例
-npx sass src/f/_includes/accordion-area/style.scss src/f/_includes/accordion-area/style.css
+source ~/.nvm/nvm.sh && npx sass src/myproject/_includes/gravity/style.scss src/myproject/_includes/gravity/style.css
 ```
 
 ### セクション単体チェックの方法（新フロー）
 
 各セクションの `_includes/{セクション名}/` ディレクトリを開き：
 1. `preview.html` をブラウザで表示（ビルド不要）
-2. 同じフォルダの `capture.png` と並べて比較
+2. `figma-assets/` 内のキャプチャと比較して確認
 3. JSONの値とCSSが1対1で一致しているか検証
-4. 差異があれば `style.scss` を修正 → `npx sass` で再コンパイル → 即確認
+4. 差異があれば `style.scss` を修正 → `source ~/.nvm/nvm.sh && npx sass` で再コンパイル → 即確認
+
+> **重要**: preview.html内にキャプチャ画像を埋め込まない。HTMLは本番で使う純粋なコードのみを記述する。
 
 **メリット**:
 - Gulpビルドを待たずに即座に確認できる
 - 複数ターミナルで並列開発可能
-- capture.pngが同じフォルダにあるので比較が容易
 
 ### コマンド
 
+**重要**: Claude Codeから実行する場合は`source ~/.nvm/nvm.sh &&`を先頭に付けること。
+
 | コマンド | 用途 | 動作 |
 |----------|------|------|
-| `npm run dev` | 開発用 | ビルド → サーバー起動 → ファイル監視 → 自動リロード |
-| `npm run build` | 本番用 | ビルドのみ（サーバー起動なし） |
-
-```
+| `source ~/.nvm/nvm.sh && npm run dev` | 開発用 | ビルド → サーバー起動 → ファイル監視 → 自動リロード |
+| `source ~/.nvm/nvm.sh && npm run build` | 本番用 | ビルドのみ（サーバー起動なし） |
 
 ### 新しいセクションの追加手順
 
@@ -1283,28 +1327,22 @@ npx sass src/f/_includes/accordion-area/style.scss src/f/_includes/accordion-are
    src/{project-name}/_includes/新セクション名/index.html
    ```
 
-3. **キャプチャをコピー**
-   ```
-   figma-assets/{project-name}/sections/新セクション名/desktop/capture.png
-   → src/{project-name}/_includes/新セクション名/capture.png
-   ```
-
-4. **Sassファイルを作成**
+3. **Sassファイルを作成**
    ```
    src/{project-name}/scss/_新セクション名.scss
    ```
 
-5. **style.scssにインポート追加**
+4. **style.scssにインポート追加**
    ```scss
    @import '新セクション名';
    ```
 
-6. **メインindex.htmlにインクルード追加**
+5. **メインindex.htmlにインクルード追加**
    ```html
    @@include('_includes/新セクション名/index.html')
    ```
 
-7. **必要ならアイコンを追加**
+6. **必要ならアイコンを追加**
    ```
    src/{project-name}/icons/アイコン名.svg
    ```
