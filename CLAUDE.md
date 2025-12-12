@@ -158,12 +158,14 @@ HTML/CSS生成後、以下を必ず実行：
 
 ---
 
-## ⚠️ 作業環境の制約
+## ⚠️ 作業環境の制約（Claude Code使用時）
+
+> **注意**: このセクションはClaude Code特有の制約です。他のAIツールを使用する場合は適用されません。
 
 ### Git Worktree禁止
 - **このプロジェクトではgit worktreeを使用しない**
 - 必ずメインリポジトリ `/Users/fukumorikei/figma-to-code` で作業すること
-- 理由: worktree環境ではnpmが動作しないため
+- 理由: Claude Codeのworktree環境ではnvmのパスが通らず、npmが動作しないため
 
 ---
 
@@ -191,7 +193,9 @@ figma-assets/myproject/        →    src/myproject/
 | `/{プロジェクト名}/{セクション}/` | `/_includes/{セクション}.html` | 各セクション = 1インクルードファイル |
 
 ### 禁止事項
-- `src/` 直下に新規ディレクトリを勝手に作成しない
+- `figma-assets/` に対応するプロジェクトが存在しない `src/` ディレクトリを勝手に作成しない
+  - ✅ OK: `figma-assets/f/` があるから `src/f/` を作成
+  - ❌ NG: `figma-assets/` に存在しない `src/random-project/` を勝手に作成
 - figma-assetsの各セクションを別プロジェクトとして分離しない
 
 ### 作業フロー
@@ -201,36 +205,6 @@ figma-assets/myproject/        →    src/myproject/
 4. `index.html` で全セクションを `@@include` で統合
 
 ---
-
-## 自動化コマンド定義
-
-### 基本コマンド
-```yaml
-# .claude.yml (今後の実装想定)
-workflows:
-  figma-complete:
-    description: "Complete Figma to HTML/CSS workflow"
-    steps:
-      - structural-analysis
-      - detailed-mapping
-      - html-css-generation
-      - quality-validation
-    parallel: true
-    max-concurrent: 3
-
-  figma-single:
-    description: "Single section processing"
-    steps:
-      - structural-analysis
-      - detailed-mapping
-      - html-css-generation
-      - quality-validation
-    parallel: false
-
-commands:
-  完全自動化: figma-complete
-  単体処理: figma-single
-```
 
 ## 現在利用可能なショートコマンド
 
@@ -282,26 +256,6 @@ af: output/myproject/sections_02
 - **入力時間**: 95%短縮 (長文指示 → 1単語)
 - **エラー率**: 80%削減 (自動品質チェック)
 - **一貫性**: 100%向上 (標準化されたワークフロー)
-
-### **使用例比較**
-
-#### 従来の方法
-```
-1. "次のディレクトリ内にあるジェイソンとキャプチャーを確認してください。output/myproject/sections_02 まずは構造的な内容を把握 どのようなものが配置されているか、カラムはいくつあるか、テキストやボタンリンクはいくつあるか それぞれどのように配置されているか"
-
-2. "次は詳細を把握 extracted.md,extracted-sp.mdの内容を細かく調査して先ほどの構造的に把握した内容とすり合わせる 各ボタンのサイズ、位置、パディング、マージンを網羅的に取得。それらをCSSに正確に反映しextracted.md,extracted-sp.mdの内容と齟齬がないことを確認する。マッピングする。その際部分的な修正のみにとどまると構造的な破綻を起こす可能性が高いので、周辺の構造的な内容や影響も調査した上で、該当箇所の正確な数値を反映する。extracted.md,extracted-sp.mdとcss でマッチしていない要素については再度マッピングをやり直す 2-FIGMA_TO_CSS_QUALITY_CHECKLIST.md このファイルの内容確認して要件を満たすようにしてください マッピングできたらファイルとして出力して"
-
-3. "その工程が完了したらそれらをもとに次のファイルの内容をプロンプトとして実行して 3-PROMPT-SAFE.md"
-
-合計: 約300文字 × 3回 = 900文字入力
-```
-
-#### 自動化後
-```
-af: output/myproject/sections_02
-
-合計: 33文字入力 (96%削減)
-```
 
 ## Figma→HTML/CSS 変換ルール
 
@@ -605,6 +559,61 @@ af: output/myproject/sections_02
 - [ ] 反対側にコンテナ余白があるか
 - [ ] どちら側が端まで伸びているか（左/右）
 
+### 8. 装飾要素の検出（gap計算補正）
+- [ ] リスト間に区切り線（Divider/Separator）があるか
+- [ ] 要素間に矢印・アイコンがあるか
+- [ ] ドット・ブレットポイント等の装飾があるか
+
+**⚠️ 装飾要素を発見した場合の対応:**
+
+Figmaでは装飾要素（Divider等）が独立した子要素として存在し、親の`gap`が適用される。
+しかしCSSで擬似要素（`::before`/`::after`）として実装すると、擬似要素はgap計算に含まれない。
+
+```
+Figma構造:
+  親要素 (gap: 12px)
+  ├── Item      ← gap 12px ↓
+  ├── Divider   ← gap 12px ↓  ※独立した子要素
+  └── Item
+
+実際の間隔: 12px + Divider + 12px = 24px + α
+```
+
+**擬似要素で実装する場合のgap計算式:**
+```
+CSSのgap値 = 元のgap × 2 + 装飾要素の高さ
+擬似要素の位置 = bottom: -(元のgap + 装飾要素の高さ / 2)
+
+例: gap=12px, Divider高さ=1px の場合
+- CSSのgap: 12 × 2 + 1 = 25px
+- 擬似要素: bottom: -(12 + 0.5) = -12.5px
+```
+
+**実装例:**
+```scss
+// ❌ 間違い: 元のgapをそのまま使用
+.items {
+  gap: 12px;  // Figmaのgap値
+}
+.item::after {
+  bottom: -6px;  // 適当な位置
+}
+
+// ✅ 正解: gap計算を補正
+.items {
+  gap: 25px;  // 12 × 2 + 1(Divider高さ)
+}
+.item:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  bottom: -12.5px;  // -(12 + 0.5)
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgb(212, 214, 221);
+}
+```
+
 ## 非対称レイアウト実装パターン
 
 片側がviewport端まで伸び、反対側に余白があるレイアウトの実装方法：
@@ -900,6 +909,101 @@ filter: brightness(0) saturate(100%) invert(61%) sepia(89%) saturate(1000%) hue-
 ```
 
 この方式では`currentColor`が使用可能。
+
+---
+
+## アセット参照（sections.json）
+
+Figmaデータ取得時（`1A-fetch-figma.js`実行時）に、ダウンロードしたアセット情報が`sections.json`に自動記録される。
+HTML生成時はこの情報を参照してアイコンパスを取得する。
+
+### sections.jsonの構造
+
+```json
+{
+  "sections": [{
+    "name": "cart",
+    "originalName": "Cart",
+    "nodeId": "1:100",
+    "path": "sections/cart",
+    "addedAt": "2025-12-10T...",
+    "assets": {
+      "capture": {
+        "png": "figma-capture.png",
+        "webp": "figma-capture.webp"
+      },
+      "icons": [
+        {
+          "name": "Arrow",
+          "file": "icons/arrow.svg",
+          "nodeId": "1:200",
+          "type": "VECTOR"
+        },
+        {
+          "name": "Plus",
+          "file": "icons/plus.svg",
+          "nodeId": "1:201",
+          "type": "VECTOR"
+        }
+      ]
+    }
+  }]
+}
+```
+
+### レスポンシブ対応時の構造
+
+```json
+{
+  "sections": [{
+    "name": "hero",
+    "devices": {
+      "desktop": {
+        "nodeId": "1:100",
+        "dataFile": "desktop/figma-data.json",
+        "captureFile": "desktop/figma-capture.png",
+        "assets": {
+          "capture": { "png": "figma-capture.png", "webp": "figma-capture.webp" },
+          "icons": [...]
+        }
+      },
+      "mobile": {
+        "nodeId": "2:100",
+        "dataFile": "mobile/figma-data.json",
+        "captureFile": "mobile/figma-capture.png",
+        "assets": {
+          "capture": { "png": "figma-capture.png", "webp": "figma-capture.webp" },
+          "icons": [...]
+        }
+      }
+    }
+  }]
+}
+```
+
+### HTML生成時のアイコン参照
+
+```html
+<!-- sections.jsonのicons[].fileの値をそのまま使用 -->
+<img src="icons/arrow.svg" alt="">
+<img src="icons/plus.svg" alt="">
+```
+
+### ワークフロー
+
+1. `node 1A-fetch-figma.js` 実行時にSVGが自動ダウンロードされる
+2. ダウンロードされたSVGのパスが`sections.json`の`assets.icons`に記録される
+3. HTML生成時、`sections.json`を参照してアイコンパスを取得
+4. AIがSVGを生成する必要はない（Figmaから直接取得済み）
+
+### 注意事項
+
+- `sections.json`はFigma取得時に自動更新される
+- 手動でSVGを追加した場合は`sections.json`に反映されない
+- アイコンのファイル名はFigma上の要素名から自動生成（小文字+ハイフン区切り）
+- 同名のアイコンがある場合は連番が付与される（`arrow.svg`, `arrow-1.svg`, `arrow-2.svg`）
+
+---
 
 ## ⛔ 実装開始前の必須ゲート（CSS/HTML生成禁止条件）
 

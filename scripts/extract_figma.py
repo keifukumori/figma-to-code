@@ -10,12 +10,125 @@ Figma JSON Extractor
 
 出力:
   - extracted.md (デフォルト) または指定したファイル名
+
+特徴:
+  - figma_properties.json のホワイトリストを参照
+  - 未知のプロパティは警告を出してホワイトリストに自動追加
 """
 
 import json
 import sys
 import os
 from pathlib import Path
+from datetime import datetime
+
+
+# ホワイトリストファイルのパス
+SCRIPT_DIR = Path(__file__).parent
+WHITELIST_FILE = SCRIPT_DIR / "figma_properties.json"
+
+# CSS生成に不要なプロパティ（ブラックリスト）
+BLACKLIST_PROPS = {
+    "id", "pluginData", "sharedPluginData", "componentPropertyReferences",
+    "componentPropertyDefinitions", "componentProperties", "overrides",
+    "exportSettings", "preserveRatio", "layoutPositioning", "reactions",
+    "transitionNodeID", "transitionDuration", "transitionEasing",
+    "prototypeStartNodeID", "flowStartingPoints", "devicePresets",
+    "children",  # 子要素は別途処理
+    "document", "nodes",  # ルート構造
+    "name", "type", "visible",  # 共通プロパティは別途処理
+}
+
+
+def load_whitelist():
+    """ホワイトリストをロード"""
+    if not WHITELIST_FILE.exists():
+        print(f"⚠️ ホワイトリストファイルが見つかりません: {WHITELIST_FILE}")
+        return {}
+
+    with open(WHITELIST_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_whitelist(whitelist):
+    """ホワイトリストを保存"""
+    whitelist["_meta"]["lastUpdated"] = datetime.now().strftime("%Y-%m-%d")
+    with open(WHITELIST_FILE, "w", encoding="utf-8") as f:
+        json.dump(whitelist, f, indent=2, ensure_ascii=False)
+
+
+def get_type_properties(whitelist, node_type):
+    """ノードタイプのプロパティ一覧を取得（継承を解決）"""
+    props = set()
+
+    # 共通プロパティ
+    if "common" in whitelist:
+        props.update(whitelist["common"].get("properties", []))
+
+    # タイプ固有のプロパティ
+    if node_type in whitelist:
+        type_config = whitelist[node_type]
+        props.update(type_config.get("properties", []))
+
+        # 継承
+        if "inherits" in type_config:
+            parent_type = type_config["inherits"]
+            if parent_type in whitelist:
+                props.update(whitelist[parent_type].get("properties", []))
+
+    return props
+
+
+def detect_unknown_properties(node, node_type, whitelist, unknown_props):
+    """未知のプロパティを検出"""
+    known_props = get_type_properties(whitelist, node_type)
+
+    for key in node.keys():
+        if key in BLACKLIST_PROPS:
+            continue
+        if key not in known_props:
+            if node_type not in unknown_props:
+                unknown_props[node_type] = set()
+            unknown_props[node_type].add(key)
+
+
+def add_unknown_to_whitelist(whitelist, unknown_props):
+    """未知のプロパティをホワイトリストに追加"""
+    added = []
+
+    for node_type, props in unknown_props.items():
+        if node_type not in whitelist:
+            whitelist[node_type] = {
+                "description": f"自動追加: {node_type}",
+                "properties": []
+            }
+
+        existing = set(whitelist[node_type].get("properties", []))
+        new_props = props - existing
+
+        if new_props:
+            whitelist[node_type]["properties"] = list(existing | new_props)
+            for prop in new_props:
+                added.append(f"{node_type}.{prop}")
+
+    return added
+
+
+# 特殊な変換処理が必要なプロパティ
+# key: プロパティ名, value: 変換関数名（文字列）または "raw"（そのまま出力）
+SPECIAL_CONVERTERS = {
+    "fills": "extract_color",
+    "strokes": "extract_stroke_color",
+    "effects": "extract_effects",
+}
+
+# Markdown出力時にスキップするプロパティ（内部処理用や冗長なもの）
+SKIP_IN_OUTPUT = {
+    "path",  # 内部パス情報（JSONのpathと被る）
+}
+
+# 基本プロパティ（常に最初に出力）
+BASE_PROPERTIES = ["name", "width", "height"]
 
 
 def rgb_to_css(r, g, b, a=1):
@@ -152,7 +265,92 @@ def get_dimensions(node):
     }
 
 
-def traverse_nodes(node, path="", results=None, warnings=None):
+def format_value_for_markdown(value):
+    """値をMarkdown出力用にフォーマット"""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        # パイプ文字と改行をエスケープ
+        return value.replace("|", "\\|").replace("\n", " ")
+    if isinstance(value, list):
+        if len(value) == 0:
+            return None
+        # リストはJSON形式で出力（長い場合は切り詰め）
+        json_str = json.dumps(value, ensure_ascii=False)
+        if len(json_str) > 100:
+            return json_str[:100] + "..."
+        return json_str
+    if isinstance(value, dict):
+        # 辞書はJSON形式で出力（長い場合は切り詰め）
+        json_str = json.dumps(value, ensure_ascii=False)
+        if len(json_str) > 100:
+            return json_str[:100] + "..."
+        return json_str
+    return str(value)
+
+
+def extract_node_properties_dynamic(node, node_type, whitelist, current_path):
+    """
+    ホワイトリストに基づいてノードのプロパティを動的に抽出
+    JSONに存在するプロパティはすべて抽出される
+    """
+    dims = get_dimensions(node)
+
+    # 基本情報
+    info = {
+        "name": node.get("name", "Unknown"),
+        "path": current_path,
+        "width": dims.get("width"),
+        "height": dims.get("height"),
+    }
+
+    # ホワイトリストのプロパティを取得
+    whitelist_props = get_type_properties(whitelist, node_type)
+
+    # JSONに存在するすべてのプロパティを走査
+    for key in node.keys():
+        # ブラックリストはスキップ
+        if key in BLACKLIST_PROPS:
+            continue
+        # 既に処理済みの基本プロパティはスキップ
+        if key in ["name", "absoluteBoundingBox"]:
+            continue
+
+        value = node.get(key)
+        if value is None:
+            continue
+
+        # 特殊変換が必要なプロパティ
+        if key in SPECIAL_CONVERTERS:
+            converter_name = SPECIAL_CONVERTERS[key]
+            if converter_name == "extract_color":
+                converted = extract_color(value)
+            elif converter_name == "extract_stroke_color":
+                converted = extract_stroke_color(value)
+            elif converter_name == "extract_effects":
+                converted = extract_effects(value)
+            else:
+                converted = value
+
+            # 変換後のキー名を調整
+            if key == "fills":
+                info["fill"] = converted
+            elif key == "strokes":
+                info["stroke"] = converted
+            else:
+                info[key] = converted
+        else:
+            # そのまま格納
+            info[key] = value
+
+    return info
+
+
+def traverse_nodes(node, path="", results=None, warnings=None, whitelist=None, unknown_props=None):
     """ノードを再帰的に走査して情報を抽出"""
     if results is None:
         results = {
@@ -160,10 +358,13 @@ def traverse_nodes(node, path="", results=None, warnings=None):
             "frames": [],
             "rectangles": [],
             "vectors": [],
+            "lines": [],
             "ellipses": [],
         }
     if warnings is None:
         warnings = []
+    if unknown_props is None:
+        unknown_props = {}
 
     node_type = node.get("type", "")
     node_name = node.get("name", "Unknown")
@@ -172,24 +373,37 @@ def traverse_nodes(node, path="", results=None, warnings=None):
 
     # 非表示要素はスキップ
     if not visible:
-        return results, warnings
+        return results, warnings, unknown_props
+
+    # 未知プロパティの検出
+    if whitelist:
+        detect_unknown_properties(node, node_type, whitelist, unknown_props)
 
     # テキスト要素
     if node_type == "TEXT":
         font_family, font_style = get_font_style(node)
-        font_weight = style_to_weight(font_style)
         dims = get_dimensions(node)
+
+        # styleオブジェクトからテキストスタイル情報を取得
+        style = node.get("style", {})
+
+        # fontWeightはstyleオブジェクトから直接取得、なければスタイル名から推測
+        font_weight = style.get("fontWeight") or style_to_weight(font_style)
+
+        # fontFamilyもstyleオブジェクトから取得可能
+        if not font_family:
+            font_family = style.get("fontFamily")
 
         text_info = {
             "name": node_name,
             "path": current_path,
             "characters": node.get("characters", ""),
-            "fontSize": node.get("fontSize"),
+            "fontSize": style.get("fontSize") or node.get("fontSize"),
             "fontWeight": font_weight,
             "fontFamily": font_family,
-            "lineHeight": node.get("lineHeightPx") or dims.get("height"),
-            "letterSpacing": node.get("letterSpacing"),
-            "textAlign": node.get("textAlignHorizontal"),
+            "lineHeight": style.get("lineHeightPx") or node.get("lineHeightPx") or dims.get("height"),
+            "letterSpacing": style.get("letterSpacing") or node.get("letterSpacing"),
+            "textAlign": style.get("textAlignHorizontal") or node.get("textAlignHorizontal"),
             "color": extract_color(node.get("fills", [])),
             "opacity": node.get("opacity", 1),
             "width": dims.get("width"),
@@ -218,65 +432,112 @@ def traverse_nodes(node, path="", results=None, warnings=None):
             "paddingBottom": node.get("paddingBottom"),
             "paddingLeft": node.get("paddingLeft"),
             "itemSpacing": node.get("itemSpacing"),
+            "counterAxisSpacing": node.get("counterAxisSpacing"),
             "cornerRadius": node.get("cornerRadius"),
             "backgroundColor": extract_color(node.get("fills", [])),
             "borderColor": extract_stroke_color(node.get("strokes", [])),
             "strokeWeight": node.get("strokeWeight"),
             "layoutMode": node.get("layoutMode"),
+            "overflowDirection": node.get("overflowDirection"),
+            "primaryAxisAlignItems": node.get("primaryAxisAlignItems"),
+            "counterAxisAlignItems": node.get("counterAxisAlignItems"),
             "opacity": node.get("opacity", 1),
             "effects": extract_effects(node.get("effects", [])),
         }
         results["frames"].append(frame_info)
 
-    # 矩形
+    # 矩形（動的プロパティ抽出）
     elif node_type == "RECTANGLE":
-        dims = get_dimensions(node)
-        rect_info = {
-            "name": node_name,
-            "path": current_path,
-            "width": dims.get("width"),
-            "height": dims.get("height"),
-            "cornerRadius": node.get("cornerRadius"),
-            "fill": extract_color(node.get("fills", [])),
-            "stroke": extract_stroke_color(node.get("strokes", [])),
-            "strokeWeight": node.get("strokeWeight"),
-        }
+        rect_info = extract_node_properties_dynamic(node, node_type, whitelist, current_path)
         results["rectangles"].append(rect_info)
 
-    # ベクター/アイコン
+    # ベクター/アイコン（動的プロパティ抽出）
     elif node_type == "VECTOR":
-        dims = get_dimensions(node)
-        vector_info = {
-            "name": node_name,
-            "path": current_path,
-            "width": dims.get("width"),
-            "height": dims.get("height"),
-            "fill": extract_color(node.get("fills", [])),
-            "stroke": extract_stroke_color(node.get("strokes", [])),
-        }
+        vector_info = extract_node_properties_dynamic(node, node_type, whitelist, current_path)
         results["vectors"].append(vector_info)
 
-    # 楕円/円
+    # 線（動的プロパティ抽出）
+    elif node_type == "LINE":
+        line_info = extract_node_properties_dynamic(node, node_type, whitelist, current_path)
+        results["lines"].append(line_info)
+
+    # 楕円/円（動的プロパティ抽出）
     elif node_type == "ELLIPSE":
-        dims = get_dimensions(node)
-        ellipse_info = {
-            "name": node_name,
-            "path": current_path,
-            "width": dims.get("width"),
-            "height": dims.get("height"),
-            "fill": extract_color(node.get("fills", [])),
-        }
+        ellipse_info = extract_node_properties_dynamic(node, node_type, whitelist, current_path)
         results["ellipses"].append(ellipse_info)
+
+    # その他のノードタイプも動的に処理（BOOLEAN_OPERATION, STAR, REGULAR_POLYGON等）
+    elif node_type in ["BOOLEAN_OPERATION", "STAR", "REGULAR_POLYGON"]:
+        other_info = extract_node_properties_dynamic(node, node_type, whitelist, current_path)
+        # vectorsに追加（形状系として扱う）
+        results["vectors"].append(other_info)
 
     # 子要素を再帰処理
     children = node.get("children", [])
     for child in children:
-        traverse_nodes(child, current_path, results, warnings)
+        traverse_nodes(child, current_path, results, warnings, whitelist, unknown_props)
 
-    return results, warnings
+    return results, warnings, unknown_props
 
 
-def generate_markdown(results, warnings, input_file):
+def generate_dynamic_table(title, items):
+    """
+    アイテムのリストから動的にMarkdownテーブルを生成
+    各アイテムに存在するすべてのプロパティをカラムとして出力
+    """
+    if not items:
+        return []
+
+    lines = []
+    lines.append(f"## {title}")
+    lines.append("")
+
+    # 全アイテムから存在するキーを収集（順序を保持）
+    all_keys = []
+    seen_keys = set()
+
+    # 優先的に表示するキー（順序指定）
+    priority_keys = ["name", "width", "height", "fill", "stroke", "strokeWeight",
+                     "cornerRadius", "strokeCap", "strokeJoin", "opacity"]
+
+    # まず優先キーを追加
+    for key in priority_keys:
+        for item in items:
+            if key in item and key not in seen_keys:
+                all_keys.append(key)
+                seen_keys.add(key)
+                break
+
+    # 残りのキーを追加
+    for item in items:
+        for key in item.keys():
+            if key not in seen_keys and key not in SKIP_IN_OUTPUT:
+                all_keys.append(key)
+                seen_keys.add(key)
+
+    # ヘッダー行
+    header = "| " + " | ".join(all_keys) + " |"
+    separator = "|" + "|".join(["------" for _ in all_keys]) + "|"
+    lines.append(header)
+    lines.append(separator)
+
+    # データ行
+    for item in items:
+        row_values = []
+        for key in all_keys:
+            value = item.get(key)
+            formatted = format_value_for_markdown(value)
+            if formatted is None:
+                row_values.append("-")
+            else:
+                row_values.append(str(formatted))
+        lines.append("| " + " | ".join(row_values) + " |")
+
+    lines.append("")
+    return lines
+
+
+def generate_markdown(results, warnings, input_file, unknown_props=None, added_props=None):
     """抽出結果をMarkdown形式で出力"""
     lines = []
 
@@ -287,11 +548,13 @@ def generate_markdown(results, warnings, input_file):
     lines.append(f"")
 
     # 警告セクション
-    if warnings:
+    if warnings or unknown_props or added_props:
         lines.append("## ⚠️ Warnings")
         lines.append("")
         for w in warnings:
             lines.append(f"- {w}")
+        if added_props:
+            lines.append(f"- 🆕 ホワイトリストに追加されたプロパティ: {', '.join(added_props)}")
         lines.append("")
 
     # サマリー
@@ -303,6 +566,7 @@ def generate_markdown(results, warnings, input_file):
     lines.append(f"| Frames/Components | {len(results['frames'])} |")
     lines.append(f"| Rectangles | {len(results['rectangles'])} |")
     lines.append(f"| Vectors | {len(results['vectors'])} |")
+    lines.append(f"| Lines | {len(results['lines'])} |")
     lines.append(f"| Ellipses | {len(results['ellipses'])} |")
     lines.append("")
 
@@ -326,47 +590,34 @@ def generate_markdown(results, warnings, input_file):
     if results["frames"]:
         lines.append("## Frames & Components")
         lines.append("")
-        lines.append("| Name | Type | Width | Height | Padding (T/R/B/L) | Gap | Corner | BG Color | Opacity | Effects |")
-        lines.append("|------|------|-------|--------|-------------------|-----|--------|----------|---------|---------|")
+        lines.append("| Name | Type | Width | Height | Padding (T/R/B/L) | Gap | Corner | BG Color | Layout | Overflow | Opacity |")
+        lines.append("|------|------|-------|--------|-------------------|-----|--------|----------|--------|----------|---------|")
         for f in results["frames"]:
             padding = f"{f['paddingTop']}/{f['paddingRight']}/{f['paddingBottom']}/{f['paddingLeft']}"
             if padding == "None/None/None/None":
                 padding = "-"
             opacity = f.get('opacity', 1)
             opacity_str = str(opacity) if opacity != 1 else "-"
-            effects = f.get('effects', '-') or "-"
-            lines.append(f"| {f['name']} | {f['type']} | {f['width']} | {f['height']} | {padding} | {f['itemSpacing']} | {f['cornerRadius']} | {f['backgroundColor']} | {opacity_str} | {effects} |")
+            layout = f.get('layoutMode', '-') or "-"
+            overflow = f.get('overflowDirection', '-') or "-"
+            lines.append(f"| {f['name']} | {f['type']} | {f['width']} | {f['height']} | {padding} | {f['itemSpacing']} | {f['cornerRadius']} | {f['backgroundColor']} | {layout} | {overflow} | {opacity_str} |")
         lines.append("")
 
-    # 矩形
+    # 矩形（動的カラム生成）
     if results["rectangles"]:
-        lines.append("## Rectangles")
-        lines.append("")
-        lines.append("| Name | Width | Height | Corner | Fill | Stroke |")
-        lines.append("|------|-------|--------|--------|------|--------|")
-        for r in results["rectangles"]:
-            lines.append(f"| {r['name']} | {r['width']} | {r['height']} | {r['cornerRadius']} | {r['fill']} | {r['stroke']} |")
-        lines.append("")
+        lines.extend(generate_dynamic_table("Rectangles", results["rectangles"]))
 
-    # ベクター
+    # ベクター（動的カラム生成）
     if results["vectors"]:
-        lines.append("## Vectors (Icons)")
-        lines.append("")
-        lines.append("| Name | Width | Height | Fill | Stroke |")
-        lines.append("|------|-------|--------|------|--------|")
-        for v in results["vectors"]:
-            lines.append(f"| {v['name']} | {v['width']} | {v['height']} | {v['fill']} | {v['stroke']} |")
-        lines.append("")
+        lines.extend(generate_dynamic_table("Vectors (Icons/Lines)", results["vectors"]))
 
-    # 楕円
+    # 線（動的カラム生成）
+    if results["lines"]:
+        lines.extend(generate_dynamic_table("Lines", results["lines"]))
+
+    # 楕円（動的カラム生成）
     if results["ellipses"]:
-        lines.append("## Ellipses")
-        lines.append("")
-        lines.append("| Name | Width | Height | Fill |")
-        lines.append("|------|-------|--------|------|")
-        for e in results["ellipses"]:
-            lines.append(f"| {e['name']} | {e['width']} | {e['height']} | {e['fill']} |")
-        lines.append("")
+        lines.extend(generate_dynamic_table("Ellipses", results["ellipses"]))
 
     return "\n".join(lines)
 
@@ -383,6 +634,10 @@ def main():
     if output_file is None:
         input_path = Path(input_file)
         output_file = input_path.parent / "extracted.md"
+
+    # ホワイトリスト読み込み
+    print(f"Loading whitelist: {WHITELIST_FILE}")
+    whitelist = load_whitelist()
 
     # JSON読み込み
     print(f"Reading: {input_file}")
@@ -404,10 +659,24 @@ def main():
 
     # 抽出実行
     print("Extracting...")
-    results, warnings = traverse_nodes(root)
+    results, warnings, unknown_props = traverse_nodes(root, whitelist=whitelist)
+
+    # 未知プロパティの処理
+    added_props = []
+    if unknown_props:
+        print(f"\n🆕 未知のプロパティを検出:")
+        for node_type, props in unknown_props.items():
+            for prop in props:
+                print(f"   {node_type}.{prop}")
+
+        # ホワイトリストに追加
+        added_props = add_unknown_to_whitelist(whitelist, unknown_props)
+        if added_props:
+            save_whitelist(whitelist)
+            print(f"\n✅ ホワイトリストに追加しました: {', '.join(added_props)}")
 
     # Markdown生成
-    markdown = generate_markdown(results, warnings, input_file)
+    markdown = generate_markdown(results, warnings, input_file, unknown_props, added_props)
 
     # 出力
     with open(output_file, "w", encoding="utf-8") as f:
@@ -419,6 +688,7 @@ def main():
     print(f"   Frames: {len(results['frames'])}")
     print(f"   Rectangles: {len(results['rectangles'])}")
     print(f"   Vectors: {len(results['vectors'])}")
+    print(f"   Lines: {len(results['lines'])}")
     print(f"   Ellipses: {len(results['ellipses'])}")
 
     if warnings:

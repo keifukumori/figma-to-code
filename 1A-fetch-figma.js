@@ -2,6 +2,7 @@ require('dotenv').config();
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const sharp = require('sharp');
 
 // 設定
 const FIGMA_TOKEN = process.env.FIGMA_TOKEN || 'YOUR_FIGMA_TOKEN';
@@ -39,7 +40,8 @@ function toDirectoryName(name) {
 
 function fetchFigmaNode(fileKey, nodeId) {
   return new Promise((resolve, reject) => {
-    const url = `/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}`;
+    // geometry=paths でベクターのパスデータ（fillGeometry, strokeGeometry）も取得
+    const url = `/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}&geometry=paths`;
     const options = {
       hostname: 'api.figma.com',
       path: url,
@@ -96,15 +98,21 @@ function fetchFigmaFile(fileKey) {
   });
 }
 
-function fetchFigmaImage(fileKey, nodeId) {
+function fetchFigmaImage(fileKey, nodeId, format = 'png', scale = 2) {
   return new Promise((resolve, reject) => {
-    const url = `/v1/images/${fileKey}?ids=${encodeURIComponent(nodeId)}&format=png&scale=2`;
+    let url = `/v1/images/${fileKey}?ids=${encodeURIComponent(nodeId)}&format=${format}&scale=${scale}`;
+
+    // SVG形式の場合、テキストをアウトライン化してnode-idを含める
+    if (format === 'svg') {
+      url += '&svg_outline_text=true&svg_include_node_id=true';
+    }
+
     const options = {
       hostname: 'api.figma.com',
       path: url,
       headers: { 'X-Figma-Token': FIGMA_TOKEN }
     };
-    
+
     https.get(options, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
@@ -117,6 +125,54 @@ function fetchFigmaImage(fileKey, nodeId) {
       });
     }).on('error', reject);
   });
+}
+
+// SVGコンテンツを直接ダウンロード
+function downloadSvg(url, filepath) {
+  return new Promise((resolve, reject) => {
+    const protocol = url.startsWith('https') ? https : require('http');
+    protocol.get(url, (res) => {
+      if (res.statusCode === 302 || res.statusCode === 301) {
+        downloadSvg(res.headers.location, filepath).then(resolve).catch(reject);
+        return;
+      }
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        fs.writeFileSync(filepath, data);
+        resolve(filepath);
+      });
+    }).on('error', reject);
+  });
+}
+
+// PNG→WebP変換（デフォルトで実行）
+async function convertToWebP(pngPath, webpPath) {
+  await sharp(pngPath)
+    .webp({ quality: 85 })
+    .toFile(webpPath);
+  return true;
+}
+
+// ノード内のベクター要素を収集（SVG個別ダウンロード用）
+function collectVectorNodes(node, vectors = []) {
+  const vectorTypes = ['VECTOR', 'BOOLEAN_OPERATION', 'STAR', 'REGULAR_POLYGON', 'ELLIPSE', 'LINE'];
+
+  if (vectorTypes.includes(node.type)) {
+    vectors.push({
+      id: node.id,
+      name: node.name,
+      type: node.type
+    });
+  }
+
+  if (node.children) {
+    for (const child of node.children) {
+      collectVectorNodes(child, vectors);
+    }
+  }
+
+  return vectors;
 }
 
 function downloadImage(url, filepath) {
@@ -267,13 +323,81 @@ async function processVersion(input, pageName, deviceType) {
   fs.writeFileSync(jsonPath, JSON.stringify(nodeData, null, 2));
   console.log(`Saved: ${jsonPath}`);
 
-  // 画像取得
-  const imageData = await fetchFigmaImage(fileKey, nodeId);
+  // アセット追跡用オブジェクト
+  const assets = {
+    capture: {},
+    icons: []
+  };
+
+  // 画像取得（PNG）
+  console.log('Fetching images...');
+  const imageData = await fetchFigmaImage(fileKey, nodeId, 'png', 2);
   const imageUrl = imageData.images[nodeId];
   if (imageUrl) {
-    const imagePath = path.join(sectionDir, 'figma-capture.png');
-    await downloadImage(imageUrl, imagePath);
-    console.log(`Saved: ${imagePath}`);
+    const pngPath = path.join(sectionDir, 'figma-capture.png');
+    await downloadImage(imageUrl, pngPath);
+    console.log(`Saved: ${pngPath}`);
+    assets.capture.png = 'figma-capture.png';
+
+    // WebP変換
+    const webpPath = path.join(sectionDir, 'figma-capture.webp');
+    const webpConverted = await convertToWebP(pngPath, webpPath);
+    if (webpConverted) {
+      console.log(`Saved: ${webpPath}`);
+      assets.capture.webp = 'figma-capture.webp';
+    }
+  }
+
+  // ベクター要素をSVGとしてダウンロード
+  const vectors = collectVectorNodes(node);
+  if (vectors.length > 0) {
+    const iconsDir = path.join(sectionDir, 'icons');
+    mkdirSyncRecursive(iconsDir);
+
+    // ベクターノードIDをカンマ区切りで結合してバッチリクエスト
+    const vectorIds = vectors.map(v => v.id).join(',');
+    try {
+      const svgData = await fetchFigmaImage(fileKey, vectorIds, 'svg', 1);
+
+      let svgCount = 0;
+      for (const vector of vectors) {
+        const svgUrl = svgData.images[vector.id];
+        if (svgUrl) {
+          // ファイル名をサニタイズ
+          const safeName = vector.name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '') || 'icon';
+          const svgPath = path.join(iconsDir, `${safeName}.svg`);
+
+          // 同名ファイルがある場合は連番を付与
+          let finalPath = svgPath;
+          let finalName = `${safeName}.svg`;
+          let counter = 1;
+          while (fs.existsSync(finalPath)) {
+            finalName = `${safeName}-${counter}.svg`;
+            finalPath = path.join(iconsDir, finalName);
+            counter++;
+          }
+
+          await downloadSvg(svgUrl, finalPath);
+          svgCount++;
+
+          // アセット追跡に追加
+          assets.icons.push({
+            name: vector.name,
+            file: `icons/${finalName}`,
+            nodeId: vector.id,
+            type: vector.type
+          });
+        }
+      }
+      if (svgCount > 0) {
+        console.log(`Saved: ${svgCount} SVG icons to ${iconsDir}`);
+      }
+    } catch (svgErr) {
+      console.log(`   ⚠️ SVGダウンロードスキップ: ${svgErr.message}`);
+    }
   }
 
   // セクション管理に追加（レスポンシブ対応）
@@ -298,7 +422,8 @@ async function processVersion(input, pageName, deviceType) {
       config.sections[existingIndex].devices[deviceType] = {
         nodeId: nodeId,
         dataFile: `${deviceType}/figma-data.json`,
-        captureFile: `${deviceType}/figma-capture.png`
+        captureFile: `${deviceType}/figma-capture.png`,
+        assets: assets
       };
     } else {
       // 新規セクションとして追加
@@ -306,13 +431,15 @@ async function processVersion(input, pageName, deviceType) {
         [deviceType]: {
           nodeId: nodeId,
           dataFile: `${deviceType}/figma-data.json`,
-          captureFile: `${deviceType}/figma-capture.png`
+          captureFile: `${deviceType}/figma-capture.png`,
+          assets: assets
         }
       };
       config.sections.push(sectionInfo);
     }
   } else {
     // 従来の単一デバイス処理
+    sectionInfo.assets = assets;
     if (existingIndex >= 0) {
       config.sections[existingIndex] = sectionInfo;
       console.log(`⚡ Updated existing section: ${sectionDirName}`);
